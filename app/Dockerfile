@@ -31,7 +31,7 @@ ENV DOTNET_ROOT="/usr/share/dotnet"
 # Copy pre-built C# template (no dotnet restore needed at runtime)
 COPY --from=dotnet-builder /app/csharp_template /app/csharp_template
 
-RUN groupadd -g 1000 app_user && useradd -u 1000 -g 1000 -m -s /bin/bash app_user
+RUN groupadd -g 10000 app_user && useradd -u 10000 -g 10000 -m -s /bin/bash app_user
 
 WORKDIR /app
 

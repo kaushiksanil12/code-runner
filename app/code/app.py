@@ -44,8 +44,8 @@ class ExecutionRequest(BaseModel):
 def make_set_resource_limits(language: str):
     def set_limits():
         import resource
-        # Prevent fork bombs: max 200 processes/threads
-        resource.setrlimit(resource.RLIMIT_NPROC, (200, 200))
+        # Prevent fork bombs: max 500 processes/threads
+        resource.setrlimit(resource.RLIMIT_NPROC, (500, 500))
         
         # Limit memory to 512MB for non-JVM/CLR languages (Node.js needs >256MB virtual memory)
         if language not in ["java", "csharp"]:
@@ -74,8 +74,8 @@ def run_sandboxed(command: list, work_dir: str, language: str, timeout_secs: int
         "--unshare-all",                     # Isolate network, pid, ipc, user namespaces
         "--die-with-parent",                 # Kill sandbox if parent dies
         "--chdir", work_dir,                 # Start inside the workspace
-        "--uid", "1000",                     # Run as the unprivileged web server UID
-        "--gid", "1000",                     # Run as the unprivileged web server GID
+        "--uid", "10000",                     # Run as the unprivileged web server UID
+        "--gid", "10000",                     # Run as the unprivileged web server GID
     ] + command
 
     try:
