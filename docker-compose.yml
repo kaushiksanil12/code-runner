@@ -1,0 +1,30 @@
+services:
+  secure-runner:
+    build:
+      context: .
+      network: host
+    container_name: secure-code-runner
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - WORKERS=1
+    # Hard limit the container to 1 CPU core and 1GB of physical RAM
+    cpus: "1.0"
+    mem_limit: 1g
+    memswap_limit: 1g
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN
+      - SETPCAP
+      - SETUID
+      - SETGID
+      - SYS_CHROOT
+    security_opt:
+      - seccomp:unconfined
+      - no-new-privileges:true
+    user: "1000:1000"
