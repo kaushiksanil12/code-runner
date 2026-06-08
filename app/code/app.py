@@ -134,7 +134,10 @@ def execute_code(request: ExecutionRequest, _ = Depends(check_rate_limit), __ = 
 
     # Create isolated workspace on the host (/tmp is mounted as a tmpfs in docker-compose)
     work_dir = tempfile.mkdtemp(prefix="exec_")
-    
+    # Container runs as root; make work_dir accessible to UID 10000 (setpriv target)
+    # so the sandboxed process can read source files and write compiled output.
+    os.chmod(work_dir, 0o777)
+
     result = {"stdout": "", "stderr": "", "exit_code": 0}
 
     try:
@@ -188,11 +191,17 @@ def execute_code(request: ExecutionRequest, _ = Depends(check_rate_limit), __ = 
             if not os.path.exists("/app/csharp_template"):
                 raise HTTPException(status_code=500, detail="C# template missing")
             shutil.copytree("/app/csharp_template", app_dir)
-            
+            # Recursively chown app_dir so dotnet (UID 10000 via setpriv) can
+            # create obj/bin/temp directories and write compiled output.
+            for dirpath, dirnames, filenames in os.walk(app_dir):
+                os.chown(dirpath, 10000, 10000)
+                for fname in filenames:
+                    os.chown(os.path.join(dirpath, fname), 10000, 10000)
+
             file_path = os.path.join(app_dir, "Program.cs")
             with open(file_path, "w") as f:
                 f.write(request.source_code)
-            
+
             result = run_sandboxed(["dotnet", "run", "--no-restore", "--project", "App"], work_dir, language=request.language, stdin_data=request.stdin)
 
         elif request.language == "sql":
