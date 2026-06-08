@@ -26,15 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # .NET runtime only (not SDK)
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# bwrap is designed to run SUID — it is a purpose-built, security-audited
-# sandboxing tool whose entire model is: start as root (via SUID), set up
-# namespaces + filesystem, map unprivileged UID/GID, then exec the payload.
-# Without SUID, a non-root container user (UID 10000) gets no effective
-# capabilities (Linux drops caps on exec for non-root), so bwrap cannot
-# write /proc/self/uid_map to create user namespaces.
-# The blast radius is limited: bwrap immediately drops to UID 10000 inside
-# the sandbox and the Docker container itself has restricted caps + read-only fs.
-RUN chmod u+s /usr/bin/bwrap
+# No SUID needed on bwrap: the container runs as root (user: "0:0" in
+# docker-compose), so bwrap already has full effective capabilities to
+# create user/pid/ipc/uts namespaces and call capset(), then drops to
+# UID 10000 inside the sandbox via --uid/--gid flags.
 
 # Copy only the .NET runtime from Microsoft (no SDK)
 COPY --from=dotnet-builder /usr/share/dotnet /usr/share/dotnet
