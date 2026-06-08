@@ -23,6 +23,7 @@ services:
       - ALL
     cap_add:
       - SYS_ADMIN
+      - NET_ADMIN
       - SETPCAP
       - SETUID
       - SETGID
