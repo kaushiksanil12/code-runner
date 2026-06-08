@@ -35,10 +35,10 @@ RUN groupadd -g 1000 app_user && useradd -u 1000 -g 1000 -m -s /bin/bash app_use
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY code/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY code/app.py .
 
 RUN chown -R app_user:app_user /app
 
