@@ -2,7 +2,6 @@ services:
   secure-runner:
     build:
       context: .
-      network: host
     container_name: secure-code-runner
     expose:
       - "8000"
