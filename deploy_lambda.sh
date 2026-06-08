@@ -38,7 +38,7 @@ aws ecr create-repository --repository-name $REPO_NAME --region $REGION > /dev/n
 # 3. Build the Docker image
 echo "[3/5] Building the Lambda Docker image (this might take a few minutes)..."
 cd lambda
-docker build -t $REPO_NAME .
+docker build --network host -t $REPO_NAME .
 
 # 4. Tag the image
 echo "[4/5] Tagging the image..."
