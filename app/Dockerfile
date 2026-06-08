@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
     # JDK is required to compile user-submitted Java source code
     default-jdk-headless \
+    && chmod u+s /usr/bin/bwrap \
     # .NET runtime only (not SDK)
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
