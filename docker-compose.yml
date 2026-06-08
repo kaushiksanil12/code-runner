@@ -10,10 +10,12 @@ services:
     restart: unless-stopped
     environment:
       - WORKERS=1
+      - API_KEY=super-secure-key
     # Hard limit the container to 1 CPU core and 1GB of physical RAM
     cpus: "1.0"
     mem_limit: 1g
     memswap_limit: 1g
+    pids_limit: 200
     read_only: true
     tmpfs:
       - /tmp:exec,mode=1777
