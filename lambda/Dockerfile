@@ -10,6 +10,7 @@ RUN dnf install -y \
     sqlite \
     wget \
     tar \
+    libicu \
     && dnf clean all
 
 # Install .NET 8 SDK via official install script (AL2023 doesn't have a stable Microsoft RPM url)
