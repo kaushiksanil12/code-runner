@@ -12,11 +12,13 @@ RUN dnf install -y \
     tar \
     && dnf clean all
 
-# Install .NET 8 SDK
-# AL2023 requires the Microsoft package repository for .NET 8
-RUN rpm -Uvh https://packages.microsoft.com/config/al2023/packages-microsoft-prod.rpm \
-    && dnf install -y dotnet-sdk-8.0 \
-    && dnf clean all
+# Install .NET 8 SDK via official install script (AL2023 doesn't have a stable Microsoft RPM url)
+RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
+    && chmod +x dotnet-install.sh \
+    && ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
+    && rm dotnet-install.sh
+ENV PATH="$PATH:/usr/share/dotnet"
+ENV DOTNET_ROOT="/usr/share/dotnet"
 
 # Pre-build C# console template in the Lambda task directory
 # This avoids needing to run "dotnet new" or "dotnet restore" during the 10s execution window
