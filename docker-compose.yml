@@ -28,3 +28,9 @@ services:
       - seccomp:unconfined
       - no-new-privileges:true
     user: "1000:1000"
+    networks:
+      - shared
+
+networks:
+  shared:
+    external: true
