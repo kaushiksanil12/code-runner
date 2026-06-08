@@ -76,7 +76,9 @@ def run_sandboxed(command: list, work_dir: str, language: str, timeout_secs: int
         "--proc", "/proc",                   # Provide /proc
         "--tmpfs", "/tmp",                   # Empty, temporary /tmp
         "--bind", work_dir, work_dir,        # Allow write access only to the workspace
-        "--unshare-all",                     # Isolate network, pid, ipc, user namespaces
+        "--unshare-all",                     # Isolate pid, ipc, user, uts namespaces
+        "--share-net",                       # Re-share network ns: avoids RTM_NEWADDR failure on AWS
+                                             # (container's network is already isolated by Docker)
         "--die-with-parent",                 # Kill sandbox if parent dies
         "--chdir", work_dir,                 # Start inside the workspace
         "--uid", "10000",                     # Run as the unprivileged web server UID
