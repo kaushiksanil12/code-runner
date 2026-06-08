@@ -76,13 +76,21 @@ def run_sandboxed(command: list, work_dir: str, language: str, timeout_secs: int
         "--proc", "/proc",                   # Provide /proc
         "--tmpfs", "/tmp",                   # Empty, temporary /tmp
         "--bind", work_dir, work_dir,        # Allow write access only to the workspace
-        "--unshare-all",                     # Isolate user, pid, ipc, uts namespaces
-        "--share-net",                       # Re-share network ns: avoids RTM_NEWADDR on AWS
-                                             # (Docker network is the isolation boundary)
+        "--unshare-pid",                     # Isolate process tree (needs CAP_SYS_ADMIN, not user ns)
+        "--unshare-ipc",                     # Isolate IPC namespace
+        "--unshare-uts",                     # Isolate hostname/domain name
+        # NOTE: --unshare-user omitted — Ubuntu 24.04 sets
+        #   kernel.apparmor_restrict_unprivileged_userns=1 which blocks user namespace
+        #   creation at the kernel level even for root inside Docker with apparmor:unconfined.
+        #   Changing this sysctl is not feasible in production.
+        # NOTE: --unshare-net omitted — not needed; Docker provides network isolation.
+        #   (Also caused RTM_NEWADDR failures on AWS.)
         "--die-with-parent",                 # Kill sandbox if parent dies
         "--chdir", work_dir,                 # Start inside the workspace
-        "--uid", "10000",                    # Drop to unprivileged UID inside sandbox
-        "--gid", "10000",                    # Drop to unprivileged GID inside sandbox
+        # Drop root → UID 10000 via setpriv before executing user code.
+        # setpriv calls setuid()/setgid() directly — no user namespace needed.
+        # --inh-caps=-all ensures no capabilities survive the exec into user code.
+        "setpriv", "--reuid=10000", "--regid=10000", "--init-groups", "--inh-caps=-all", "--",
     ] + command
 
     try:
