@@ -76,17 +76,13 @@ def run_sandboxed(command: list, work_dir: str, language: str, timeout_secs: int
         "--proc", "/proc",                   # Provide /proc
         "--tmpfs", "/tmp",                   # Empty, temporary /tmp
         "--bind", work_dir, work_dir,        # Allow write access only to the workspace
-        "--unshare-pid",                     # Isolate process tree (no fork bombs escaping)
-        "--unshare-ipc",                     # Isolate IPC (shared memory, semaphores)
-        "--unshare-uts",                     # Isolate hostname/domain name
-        # NOTE: --unshare-user omitted: requires root or kernel.unprivileged_userns_clone=1
-        #       (not available on AWS Ubuntu without host sysctl). UID 10000 is already
-        #       non-root — enforced by Docker's user: "10000:10000" in docker-compose.
-        # NOTE: --unshare-net omitted: RTM_NEWADDR (loopback setup) is blocked on AWS.
-        #       Container-level network isolation via Docker is the boundary instead.
+        "--unshare-all",                     # Isolate user, pid, ipc, uts namespaces
+        "--share-net",                       # Re-share network ns: avoids RTM_NEWADDR on AWS
+                                             # (Docker network is the isolation boundary)
         "--die-with-parent",                 # Kill sandbox if parent dies
         "--chdir", work_dir,                 # Start inside the workspace
-        # No --uid/--gid: already running as 10000 via Docker; user ns not being created
+        "--uid", "10000",                    # Drop to unprivileged UID inside sandbox
+        "--gid", "10000",                    # Drop to unprivileged GID inside sandbox
     ] + command
 
     try:
