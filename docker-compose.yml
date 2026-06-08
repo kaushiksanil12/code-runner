@@ -5,12 +5,12 @@ services:
       context: ./app
       network: host
     container_name: secure-code-runner
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     restart: unless-stopped
     environment:
-      - WORKERS=1
-      - API_KEY=super-secure-key
+      - WORKERS=${WORKERS:-1}
+      - API_KEY=${API_KEY}
     # Hard limit the container to 1 CPU core and 1GB of physical RAM
     cpus: "1.0"
     mem_limit: 1g
@@ -32,6 +32,12 @@ services:
       - apparmor:unconfined
       - seccomp:unconfined
     user: "10000:10000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - shared
 

@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(title="Secure Code Execution Engine")
 
+@app.get("/health")
+def health_check():
+    """Unauthenticated health probe for Docker/AWS load balancer checks."""
+    return {"status": "healthy"}
+
 API_KEY = os.environ.get("API_KEY", "super-secure-key")
 RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS = 15
