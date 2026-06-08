@@ -28,6 +28,7 @@ services:
       - SETGID
       - SYS_CHROOT
     security_opt:
+      - apparmor:unconfined
       - seccomp:unconfined
       - no-new-privileges:true
     user: "1000:1000"
