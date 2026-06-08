@@ -1,235 +1,127 @@
 import time
-import subprocess
+import json
 import os
-import tempfile
-import shutil
+import boto3
+from botocore.exceptions import ClientError, BotoCoreError
 from collections import defaultdict
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-app = FastAPI(title="Secure Code Execution Engine")
+app = FastAPI(title="Secure Code Execution Engine (AWS Lambda)")
 
-@app.get("/health")
-def health_check():
-    """Unauthenticated health probe for Docker/AWS load balancer checks."""
-    return {"status": "healthy"}
-
+# --- Rate Limiting & Auth ---
 API_KEY = os.environ.get("API_KEY", "super-secure-key")
 RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS = 15
 request_counts = defaultdict(list)
 
+# --- AWS Config ---
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+LAMBDA_FUNCTION_NAME = os.environ.get("LAMBDA_FUNCTION_NAME", "SecureCodeRunner")
+
+# Initialize boto3 client. Assumes IAM Role is attached to the EC2 instance
+# or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are provided in the environment.
+try:
+    lambda_client = boto3.client('lambda', region_name=AWS_REGION)
+except Exception as e:
+    print(f"Warning: Failed to initialize boto3 client: {e}")
+    lambda_client = None
+
 def check_rate_limit(request: Request):
     client_ip = request.client.host
     now = time.time()
-    request_counts[client_ip] = [t for t in request_counts[client_ip] if now - t < RATE_LIMIT_WINDOW]
-    if len(request_counts[client_ip]) >= MAX_REQUESTS:
-        raise HTTPException(status_code=429, detail="Too many requests")
-    request_counts[client_ip].append(now)
+    counts = request_counts[client_ip]
+    counts = [t for t in counts if now - t < RATE_LIMIT_WINDOW]
+    if len(counts) >= MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    counts.append(now)
+    request_counts[client_ip] = counts
 
 def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-SUPPORTED_LANGUAGES = {
-    "python",
-    "node",
-    "c",
-    "cpp",
-    "java",
-    "csharp",
-    "sql",
-}
-
 class ExecutionRequest(BaseModel):
     language: str
-    source_code: str = Field(..., max_length=65536)
-    stdin: str = Field(default="", max_length=65536)
+    source_code: str
+    stdin: str = ""
 
-def make_set_resource_limits(language: str):
-    def set_limits():
-        import resource
-        # Prevent fork bombs: max 500 processes/threads
-        resource.setrlimit(resource.RLIMIT_NPROC, (500, 500))
-        
-        # Limit memory to 512MB for non-JVM/CLR languages (Node.js needs >256MB virtual memory)
-        if language not in ["java", "csharp"]:
-            mem_limit = 512 * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
-            
-        # Limit file size creation (unlimited for C# due to MSBuild, 50MB for others)
-        fsize_limit = resource.RLIM_INFINITY if language == "csharp" else 50 * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_FSIZE, (fsize_limit, fsize_limit))
-        
-        # Limit CPU time to 5 seconds
-        resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
-    return set_limits
-
-def run_sandboxed(command: list, work_dir: str, language: str, timeout_secs: int = 5, stdin_data: str = ""):
-    """
-    Executes a command inside a strict bubblewrap sandbox.
-    """
-    bwrap_cmd = [
-        "bwrap",
-        "--ro-bind", "/", "/",               # Read-only root filesystem
-        "--dev", "/dev",                     # Provide /dev
-        "--proc", "/proc",                   # Provide /proc
-        "--tmpfs", "/tmp",                   # Empty, temporary /tmp
-        "--bind", work_dir, work_dir,        # Allow write access only to the workspace
-        "--unshare-pid",                     # Isolate process tree (needs CAP_SYS_ADMIN, not user ns)
-        "--unshare-ipc",                     # Isolate IPC namespace
-        "--unshare-uts",                     # Isolate hostname/domain name
-        # NOTE: --unshare-user omitted — Ubuntu 24.04 sets
-        #   kernel.apparmor_restrict_unprivileged_userns=1 which blocks user namespace
-        #   creation at the kernel level even for root inside Docker with apparmor:unconfined.
-        #   Changing this sysctl is not feasible in production.
-        # NOTE: --unshare-net omitted — not needed; Docker provides network isolation.
-        #   (Also caused RTM_NEWADDR failures on AWS.)
-        "--die-with-parent",                 # Kill sandbox if parent dies
-        "--chdir", work_dir,                 # Start inside the workspace
-        # Drop root → UID 10000 via setpriv before executing user code.
-        # setpriv calls setuid()/setgid() directly — no user namespace needed.
-        # --inh-caps=-all ensures no capabilities survive the exec into user code.
-        "setpriv", "--reuid=10000", "--regid=10000", "--init-groups", "--inh-caps=-all", "--",
-    ] + command
-
-    try:
-        # Pass a clean, minimal environment
-        env = {
-            "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/share/dotnet",
-            "HOME": work_dir,
-            "DOTNET_ROOT": "/usr/share/dotnet",
-            "DOTNET_CLI_HOME": work_dir,
-            "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-            "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
-            "DOTNET_NOLOGO": "1",
-            "DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY": "0"
-        }
-        
-        proc = subprocess.run(
-            bwrap_cmd,
-            env=env,
-            input=stdin_data,
-            capture_output=True,
-            text=True,
-            timeout=timeout_secs,
-            preexec_fn=make_set_resource_limits(language)
-        )
-        return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
-    except subprocess.TimeoutExpired as e:
-        return {
-            "stdout": e.stdout or "",
-            "stderr": (e.stderr or "") + f"\nExecution timed out after {timeout_secs} seconds.",
-            "exit_code": 124
-        }
-    except Exception as e:
-        return {"stdout": "", "stderr": "Internal execution error occurred.", "exit_code": -1}
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "architecture": "aws_lambda"}
 
 @app.post("/execute")
 def execute_code(request: ExecutionRequest, _ = Depends(check_rate_limit), __ = Depends(verify_api_key)):
     start = time.time()
+    
+    if lambda_client is None:
+         raise HTTPException(status_code=500, detail="AWS Lambda client not initialized. Check IAM permissions.")
 
-    if request.language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(status_code=400, detail=f"Unsupported language: {request.language}")
-
-    # Create isolated workspace on the host (/tmp is mounted as a tmpfs in docker-compose)
-    work_dir = tempfile.mkdtemp(prefix="exec_")
-    # Container runs as root; make work_dir accessible to UID 10000 (setpriv target)
-    # so the sandboxed process can read source files and write compiled output.
-    os.chmod(work_dir, 0o777)
-
-    result = {"stdout": "", "stderr": "", "exit_code": 0}
+    # Prepare the payload for Lambda
+    payload = {
+        "language": request.language,
+        "source_code": request.source_code,
+        "stdin": request.stdin
+    }
 
     try:
-        if request.language == "python":
-            file_path = os.path.join(work_dir, "script.py")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
-            result = run_sandboxed(["python3", "script.py"], work_dir, language=request.language, stdin_data=request.stdin)
-
-        elif request.language == "node":
-            file_path = os.path.join(work_dir, "script.js")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
-            result = run_sandboxed(["node", "script.js"], work_dir, language=request.language, stdin_data=request.stdin)
-
-        elif request.language == "c":
-            file_path = os.path.join(work_dir, "main.c")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
+        # Invoke the Lambda function synchronously
+        response = lambda_client.invoke(
+            FunctionName=LAMBDA_FUNCTION_NAME,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(payload)
+        )
+        
+        # Read the streaming response payload
+        response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+        
+        # Check if Lambda crashed or had a Function Error (e.g. OOM or initialization error)
+        if 'FunctionError' in response:
+            error_msg = response_payload.get('errorMessage', 'Unknown Lambda Error')
+            return {
+                "status": "Error",
+                "stdout": "",
+                "stderr": f"AWS Lambda execution failed: {error_msg}",
+                "exit_code": -1,
+                "time_ms": int((time.time() - start) * 1000)
+            }
             
-            compile_res = run_sandboxed(["gcc", "main.c", "-o", "main"], work_dir, language=request.language)
-            if compile_res["exit_code"] != 0:
-                result = compile_res
-            else:
-                result = run_sandboxed(["./main"], work_dir, language=request.language, stdin_data=request.stdin)
-
-        elif request.language == "cpp":
-            file_path = os.path.join(work_dir, "main.cpp")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
+        # Ensure the response has the required fields
+        if "status" not in response_payload:
+            return {
+                "status": "Error",
+                "stdout": "",
+                "stderr": f"Invalid response from Lambda: {response_payload}",
+                "exit_code": -1,
+                "time_ms": int((time.time() - start) * 1000)
+            }
             
-            compile_res = run_sandboxed(["g++", "main.cpp", "-o", "main"], work_dir, language=request.language)
-            if compile_res["exit_code"] != 0:
-                result = compile_res
-            else:
-                result = run_sandboxed(["./main"], work_dir, language=request.language, stdin_data=request.stdin)
+        return response_payload
 
-        elif request.language == "java":
-            file_path = os.path.join(work_dir, "Main.java")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
-            
-            compile_res = run_sandboxed(["javac", "-J-Xmx256m", "Main.java"], work_dir, language=request.language)
-            if compile_res["exit_code"] != 0:
-                result = compile_res
-            else:
-                result = run_sandboxed(["java", "-Xmx256m", "-XX:CompressedClassSpaceSize=64m", "-Xms64m", "Main"], work_dir, language=request.language, stdin_data=request.stdin)
-
-        elif request.language == "csharp":
-            app_dir = os.path.join(work_dir, "App")
-            if not os.path.exists("/app/csharp_template"):
-                raise HTTPException(status_code=500, detail="C# template missing")
-            shutil.copytree("/app/csharp_template", app_dir)
-            # Recursively chown app_dir so dotnet (UID 10000 via setpriv) can
-            # create obj/bin/temp directories and write compiled output.
-            for dirpath, dirnames, filenames in os.walk(app_dir):
-                os.chown(dirpath, 10000, 10000)
-                for fname in filenames:
-                    os.chown(os.path.join(dirpath, fname), 10000, 10000)
-
-            file_path = os.path.join(app_dir, "Program.cs")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
-
-            result = run_sandboxed(["dotnet", "run", "--no-restore", "--project", "App"], work_dir, language=request.language, stdin_data=request.stdin)
-
-        elif request.language == "sql":
-            file_path = os.path.join(work_dir, "query.sql")
-            with open(file_path, "w") as f:
-                f.write(request.source_code)
-            
-            with open(file_path, "r") as f:
-                sql_content = f.read()
-            
-            result = run_sandboxed(["sqlite3", ":memory:"], work_dir, language=request.language, stdin_data=sql_content)
-
+    except (ClientError, BotoCoreError) as e:
+        # Catch boto3/AWS networking errors (e.g., IAM permission denied, Lambda timeout at 10s)
+        error_msg = str(e)
+        if "Read timeout" in error_msg or "Task timed out" in error_msg:
+            return {
+                "status": "Error",
+                "stdout": "",
+                "stderr": "Execution timed out at the AWS layer (10.0s).",
+                "exit_code": 124,
+                "time_ms": int((time.time() - start) * 1000)
+            }
+        
+        return {
+            "status": "Error",
+            "stdout": "",
+            "stderr": f"AWS Infrastructure Error: {error_msg}",
+            "exit_code": -1,
+            "time_ms": int((time.time() - start) * 1000)
+        }
     except Exception as e:
-        result = {"stdout": "", "stderr": "Internal server error during processing.", "exit_code": -1}
-    finally:
-        # Wipe the workspace on the host side
-        shutil.rmtree(work_dir, ignore_errors=True)
-
-    elapsed = int((time.time() - start) * 1000)
-
-    stdout = result.get("stdout", "")
-    if request.language == "csharp":
-        stdout = stdout.replace("An issue was encountered verifying workloads. For more information, run \"dotnet workload update\".\n", "")
-
-    return {
-        "status": "OK" if result.get("exit_code") == 0 else "Error",
-        "stdout": stdout,
-        "stderr": result.get("stderr", ""),
-        "exit_code": result.get("exit_code", 0),
-        "time_ms": elapsed,
-    }
+        return {
+            "status": "Error",
+            "stdout": "",
+            "stderr": f"Internal API Error: {str(e)}",
+            "exit_code": -1,
+            "time_ms": int((time.time() - start) * 1000)
+        }

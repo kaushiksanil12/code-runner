@@ -11,31 +11,22 @@ services:
     environment:
       - WORKERS=${WORKERS:-1}
       - API_KEY=${API_KEY}
-    # Hard limit the container to 1 CPU core and 1GB of physical RAM
-    cpus: "1.0"
-    mem_limit: 1g
-    memswap_limit: 1g
-    pids_limit: 500
-    read_only: true
-    tmpfs:
-      - /tmp:exec,mode=1777
+      - AWS_REGION=us-east-1
+      - LAMBDA_FUNCTION_NAME=SecureCodeRunner
+      # Note: If not using an EC2 IAM Role, provide keys here:
+      # - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      # - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    
+    # Strictly unprivileged API server (No root, no caps needed)
+    user: "10000:10000"
     cap_drop:
       - ALL
-    cap_add:
-      - SYS_ADMIN
-      - NET_ADMIN
-      - SETPCAP
-      - SETUID
-      - SETGID
-      - SYS_CHROOT
     security_opt:
-      - apparmor:unconfined
-      - seccomp:unconfined
-    # Run as root so bwrap has full effective capabilities to create namespaces.
-    # bwrap itself drops to UID 10000 inside the sandbox via --uid/--gid.
-    # The outer security boundary is Docker: cap_drop ALL + selective cap_add,
-    # read-only filesystem, and resource limits.
-    user: "0:0"
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
