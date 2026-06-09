@@ -14,8 +14,8 @@ services:
       - AWS_REGION=us-east-1
       - LAMBDA_FUNCTION_NAME=SecureCodeRunner
       # Note: If not using an EC2 IAM Role, provide keys here:
-      # - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      # - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     
     # Strictly unprivileged API server (No root, no caps needed)
     user: "10000:10000"

@@ -31,7 +31,7 @@ LANGUAGES = {
     "csharp": {
         "filename": "Program.cs",
         # Copy the pre-built template from the task root to /tmp to make it writable
-        "cmd": ["sh", "-c", "cp -r /var/task/csharp_template {work_dir}/app && cp {work_dir}/Program.cs {work_dir}/app/Program.cs && cd {work_dir}/app && dotnet run --no-restore"]
+        "cmd": ["sh", "-c", "cp -r /var/task/csharp_template {work_dir}/app && cp -r /var/task/dotnet_home {work_dir}/dotnet_home && export HOME={work_dir}/dotnet_home && export DOTNET_CLI_HOME={work_dir}/dotnet_home && cp {work_dir}/Program.cs {work_dir}/app/Program.cs && cd {work_dir}/app && dotnet run --no-restore"]
     },
     "sql": {
         "filename": "main.sql",
@@ -74,14 +74,14 @@ def lambda_handler(event, context):
         raw_cmd = lang_config["cmd"]
         cmd = [c.replace("{work_dir}", work_dir) for c in raw_cmd]
 
-        # Enforce a 9.5 second timeout to ensure we return a structured JSON timeout response
-        # before AWS violently terminates the Lambda container at exactly 10.0 seconds.
+        # Enforce a 29.5 second timeout to ensure we return a structured JSON timeout response
+        # before AWS violently terminates the Lambda container at exactly 30.0 seconds.
         proc = subprocess.run(
             cmd,
             input=stdin,
             capture_output=True,
             text=True,
-            timeout=9.5
+            timeout=29.5
         )
         
         # Cap output size to prevent Lambda memory exhaustion or bloated payload limits
@@ -97,16 +97,18 @@ def lambda_handler(event, context):
             "stdout": stdout,
             "stderr": stderr,
             "exit_code": proc.returncode,
-            "time_ms": int((time.time() - start) * 1000)
+            "time_ms": int((time.time() - start) * 1000),
+            "memory_mb": getattr(context, "memory_limit_in_mb", "unknown")
         }
         
     except subprocess.TimeoutExpired as e:
         return {
             "status": "Error",
             "stdout": (e.stdout or "")[:1_000_000],
-            "stderr": (e.stderr or "")[:100_000] + "\nExecution timed out after 9.5 seconds.",
+            "stderr": (e.stderr or "")[:100_000] + "\nExecution timed out after 29.5 seconds.",
             "exit_code": 124,
-            "time_ms": int((time.time() - start) * 1000)
+            "time_ms": int((time.time() - start) * 1000),
+            "memory_mb": getattr(context, "memory_limit_in_mb", "unknown")
         }
     except Exception as e:
         return {

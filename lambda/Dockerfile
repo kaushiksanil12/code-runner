@@ -6,7 +6,7 @@ RUN dnf install -y \
     nodejs \
     gcc \
     gcc-c++ \
-    java-21-amazon-corretto-headless \
+    java-21-amazon-corretto-devel \
     sqlite \
     wget \
     tar \
@@ -20,13 +20,20 @@ RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
     && rm dotnet-install.sh
 ENV PATH="$PATH:/usr/share/dotnet"
 ENV DOTNET_ROOT="/usr/share/dotnet"
-
+ENV DOTNET_CLI_HOME="/var/task/dotnet_home"
+ENV HOME="/var/task/dotnet_home"
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+ENV DOTNET_NOLOGO=1
+ENV MSBUILDDISABLENODEREUSE=1
 # Pre-build C# console template in the Lambda task directory
 # This avoids needing to run "dotnet new" or "dotnet restore" during the 10s execution window
 WORKDIR ${LAMBDA_TASK_ROOT}
 RUN dotnet new console -n App -o csharp_template \
     && cd csharp_template \
-    && dotnet restore
+    && dotnet restore \
+    && chmod -R 777 /var/task/dotnet_home \
+    && chmod -R 777 /var/task/csharp_template
 
 # Copy the Lambda handler code into the task root
 COPY handler.py ${LAMBDA_TASK_ROOT}/

@@ -105,7 +105,7 @@ def execute_code(request: ExecutionRequest, _ = Depends(check_rate_limit), __ = 
             return {
                 "status": "Error",
                 "stdout": "",
-                "stderr": "Execution timed out at the AWS layer (10.0s).",
+                "stderr": "Execution timed out at the AWS layer (30.0s).",
                 "exit_code": 124,
                 "time_ms": int((time.time() - start) * 1000)
             }
