@@ -3,7 +3,7 @@ FROM python:3.12-slim-bookworm
 WORKDIR /app
 
 # Only the API server dependencies are needed now
-COPY requirements.txt .
+COPY code/requirements.txt .
 # Ensure boto3 is installed for AWS Lambda invocation
 RUN pip install --no-cache-dir -r requirements.txt boto3
 
