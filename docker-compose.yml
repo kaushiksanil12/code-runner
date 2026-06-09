@@ -5,8 +5,8 @@ services:
       context: ./app
       network: host
     container_name: secure-code-runner
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     restart: unless-stopped
     environment:
       - WORKERS=${WORKERS:-1}
