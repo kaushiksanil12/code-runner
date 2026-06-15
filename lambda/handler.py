@@ -147,6 +147,30 @@ def lambda_handler(event, context):
         raw_cmd = lang_config["cmd"]
         cmd = [c.replace("{work_dir}", work_dir) for c in raw_cmd]
 
+        s3_bucket = event.get("s3_db_bucket")
+        user_id = event.get("user_id", "default_user")
+        s3_key = f"db_{user_id}.sqlite"
+        db_file = os.path.join(work_dir, "db.sqlite")
+        
+        if language == "sql" and s3_bucket:
+            import boto3
+            import botocore
+            from datetime import datetime, timezone
+            s3 = boto3.client("s3")
+            try:
+                # Check file age to enforce 1-hour expiration
+                obj = s3.head_object(Bucket=s3_bucket, Key=s3_key)
+                last_modified = obj['LastModified']
+                
+                # If older than 1 hour (3600 seconds), do not download (starts fresh)
+                if (datetime.now(timezone.utc) - last_modified).total_seconds() <= 3600:
+                    s3.download_file(s3_bucket, s3_key, db_file)
+            except botocore.exceptions.ClientError as e:
+                if e.response['Error']['Code'] in ("404", "NoSuchKey"):
+                    pass
+                else:
+                    raise
+
         proc = subprocess.run(
             cmd,
             input=stdin,
@@ -163,6 +187,10 @@ def lambda_handler(event, context):
                 "An issue was encountered verifying workloads. "
                 "For more information, run \"dotnet workload update\".\n", ""
             )
+
+        if language == "sql" and s3_bucket:
+            if os.path.exists(db_file):
+                s3.upload_file(db_file, s3_bucket, s3_key)
 
         return {
             "status":    "OK" if proc.returncode == 0 else "Error",

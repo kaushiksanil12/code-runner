@@ -13,6 +13,7 @@ services:
       - API_KEY=${API_KEY}
       - AWS_REGION=us-east-1
       - LAMBDA_FUNCTION_NAME=SecureCodeRunner
+      - S3_DB_BUCKET=${S3_DB_BUCKET}
       # Note: If not using an EC2 IAM Role, provide keys here:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}

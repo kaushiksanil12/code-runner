@@ -18,6 +18,7 @@ request_counts = defaultdict(list)
 # --- AWS Config ---
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 LAMBDA_FUNCTION_NAME = os.environ.get("LAMBDA_FUNCTION_NAME", "SecureCodeRunner")
+S3_DB_BUCKET = os.environ.get("S3_DB_BUCKET", "")
 
 # Initialize boto3 client. Assumes IAM Role is attached to the EC2 instance
 # or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are provided in the environment.
@@ -45,6 +46,7 @@ class ExecutionRequest(BaseModel):
     language: str
     source_code: str
     stdin: str = ""
+    user_id: str = "default_user"
 
 @app.get("/health")
 def health_check():
@@ -61,7 +63,9 @@ def execute_code(request: ExecutionRequest, _ = Depends(check_rate_limit), __ = 
     payload = {
         "language": request.language,
         "source_code": request.source_code,
-        "stdin": request.stdin
+        "stdin": request.stdin,
+        "user_id": request.user_id,
+        "s3_db_bucket": S3_DB_BUCKET
     }
 
     try:
