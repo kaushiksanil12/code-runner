@@ -1,0 +1,1 @@
+{"status": "OK", "stdout": "Hello from Lambda!\n", "stderr": "", "exit_code": 0, "time_ms": 14, "memory_mb": "2048", "language": "Python"}
