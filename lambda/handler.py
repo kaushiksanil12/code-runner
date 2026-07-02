@@ -40,6 +40,7 @@ LANGUAGES = {
 # --- Aliases: all lowercased → canonical key in LANGUAGES ---
 ALIASES = {
     # Python
+    "python":    "python",
     "py":         "python",
     "python3":    "python",
     "python2":    "python",

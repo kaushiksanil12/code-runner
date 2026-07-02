@@ -17,7 +17,7 @@ request_counts = defaultdict(list)
 
 # --- AWS Config ---
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-LAMBDA_FUNCTION_NAME = os.environ.get("LAMBDA_FUNCTION_NAME", "SecureCodeRunner")
+LAMBDA_FUNCTION_NAME = os.environ.get("LAMBDA_FUNCTION_NAME", "secure-code-runner")
 S3_DB_BUCKET = os.environ.get("S3_DB_BUCKET", "")
 
 # Initialize boto3 client. Assumes IAM Role is attached to the EC2 instance
