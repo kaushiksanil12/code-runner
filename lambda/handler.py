@@ -45,6 +45,7 @@ ALIASES = {
     "python3":    "python",
     "python2":    "python",
     # JavaScript
+    "javascript": "javascript",
     "js":         "javascript",
     "node":       "javascript",
     "nodejs":     "javascript",
