@@ -48,9 +48,45 @@ class ExecutionRequest(BaseModel):
     stdin: str = ""
     user_id: str = "default_user"
 
+class EvaluateRequest(BaseModel):
+    s3_key: str
+    user_query: str
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "architecture": "aws_lambda"}
+
+@app.post("/evaluate")
+def evaluate_sql(request: EvaluateRequest, _ = Depends(check_rate_limit), __ = Depends(verify_api_key)):
+    """PATH 1: LMS SQL evaluation — runs user_query against a pre-built DB from S3."""
+    start = time.time()
+
+    if lambda_client is None:
+        raise HTTPException(status_code=500, detail="AWS Lambda client not initialized. Check IAM permissions.")
+
+    payload = {
+        "s3_key": request.s3_key,
+        "user_query": request.user_query
+    }
+
+    try:
+        response = lambda_client.invoke(
+            FunctionName=LAMBDA_FUNCTION_NAME,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(payload)
+        )
+        response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+
+        if 'FunctionError' in response:
+            error_msg = response_payload.get('errorMessage', 'Unknown Lambda Error')
+            return {"status": "error", "error_type": "infra_error", "message": f"Lambda error: {error_msg}"}
+
+        return response_payload
+
+    except (ClientError, BotoCoreError) as e:
+        return {"status": "error", "error_type": "infra_error", "message": f"AWS Infrastructure Error: {str(e)}"}
+    except Exception as e:
+        return {"status": "error", "error_type": "infra_error", "message": f"Internal API Error: {str(e)}"}
 
 @app.post("/execute")
 def execute_code(request: ExecutionRequest, _ = Depends(check_rate_limit), __ = Depends(verify_api_key)):
